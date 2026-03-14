@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>GUN START TIMER</title>
+    <title>GUN START TIMER v6</title>
     <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 
     <!-- Firebase SDK -->
@@ -372,6 +372,16 @@
             margin-bottom: 20px; transition: all 0.15s;
         }
         #resetBtn:hover { border-color: var(--red); color: var(--red); }
+
+        .btn-manual-gs {
+            width: 100%; padding: 11px;
+            background: transparent; border: 1px solid rgba(26,95,191,0.35); border-radius: 10px;
+            color: var(--blue);
+            font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 600;
+            letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer;
+            margin-bottom: 10px; transition: all 0.15s;
+        }
+        .btn-manual-gs:hover { background: rgba(26,95,191,0.06); }
 
         /* Timer list */
         #output { width: 100%; display: flex; flex-direction: column; gap: 10px; }
@@ -813,13 +823,29 @@
         <!-- Input categoria -->
         <div class="input-section">
             <div class="input-label">Nome categoria</div>
-            <input type="text" id="numberInput" placeholder="Gruppo1,2..." autocomplete="off">
+            <input type="text" id="numberInput" placeholder="Es: Élite, Junior, Cat. A…" autocomplete="off">
         </div>
 
         <!-- BIG BUTTON -->
         <button id="startBtn" onclick="handleButtonClick(event)">
             AVVIA
         </button>
+
+        <!-- Manual Gun Start panel -->
+        <div class="manual-panel" id="manualGsPanel">
+            <h3>🕐 Imposta Gun Start manuale</h3>
+            <p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Inserisci l'ora in cui è già partita la gara — il counter partirà dalla differenza con l'ora attuale.</p>
+            <div class="time-inputs">
+                <div class="time-input-group"><label>Ore</label><input type="number" id="gsManualHH" min="0" max="23" placeholder="HH"></div>
+                <span class="time-sep">:</span>
+                <div class="time-input-group"><label>Min</label><input type="number" id="gsManualMM" min="0" max="59" placeholder="MM"></div>
+                <span class="time-sep">:</span>
+                <div class="time-input-group"><label>Sec</label><input type="number" id="gsManualSS" min="0" max="59" placeholder="SS"></div>
+            </div>
+            <button class="btn-apply" onclick="addManualGunStart()">✔ Aggiungi Gun Start</button>
+        </div>
+
+        <button class="btn-manual-gs" onclick="toggleManualGsPanel()">🕐 Gun Start manuale</button>
 
         <button id="resetBtn" onclick="resetTimers()">⟳ Reset tutti i timer</button>
 
@@ -1040,6 +1066,53 @@
         timeOffset = target.getTime() - Date.now();
         setSyncStatus('manual','✏ Manuale');
         document.getElementById('manualPanel').classList.remove('open');
+    }
+
+    function toggleManualGsPanel() {
+        const p = document.getElementById('manualGsPanel');
+        p.classList.toggle('open');
+        if (p.classList.contains('open')) {
+            const now = trueDate();
+            document.getElementById('gsManualHH').value = now.getHours();
+            document.getElementById('gsManualMM').value = now.getMinutes();
+            document.getElementById('gsManualSS').value = now.getSeconds();
+        }
+    }
+
+    async function addManualGunStart() {
+        const hh = parseInt(document.getElementById('gsManualHH').value);
+        const mm = parseInt(document.getElementById('gsManualMM').value);
+        const ss = parseInt(document.getElementById('gsManualSS').value);
+
+        if (isNaN(hh) || isNaN(mm) || isNaN(ss)) {
+            alert('Inserisci un orario valido.');
+            return;
+        }
+
+        const target = new Date();
+        target.setHours(hh, mm, ss, 0);
+        const startEpoch = target.getTime();
+
+        if (startEpoch > trueNow()) {
+            if (!confirm("L'orario inserito è nel futuro. Continuare?")) return;
+        }
+
+        const numVal = document.getElementById('numberInput').value.trim() || '—';
+        const tempId = 'temp-' + startEpoch;
+        renderTimerEntry(document.getElementById('output'), tempId, numVal, startEpoch);
+        document.getElementById('manualGsPanel').classList.remove('open');
+
+        try {
+            const { collection, addDoc } = window._fns;
+            await addDoc(collection(window._db, 'timers'), {
+                uid: currentUser.uid, number: numVal,
+                startEpoch: startEpoch,
+                createdAt: window._fns.serverTimestamp()
+            });
+        } catch(e) {
+            document.querySelector(`[data-doc-id="${tempId}"]`)?.remove();
+            alert('Errore salvataggio: ' + e.message);
+        }
     }
 
     // ─── Format ───────────────────────────────────────────────────────────────
