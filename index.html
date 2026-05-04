@@ -1626,9 +1626,17 @@
 
     async function deleteArrival(docId) {
         if (docId.startsWith('temp-')) return;
+    
+        const conferma = confirm("Sei sicuro di voler eliminare questo elemento?");
+        if (!conferma) return;
+    
         const { doc, deleteDoc } = window._fns;
-        try { await deleteDoc(doc(window._db, 'arrivals', docId)); }
-        catch(e) { alert('Errore: ' + e.message); }
+    
+        try {
+            await deleteDoc(doc(window._db, 'arrivals', docId));
+        } catch (e) {
+            alert('Errore: ' + e.message);
+        }
     }
 
     // ─── Reset auto-increment counter ─────────────────────────────────────────
