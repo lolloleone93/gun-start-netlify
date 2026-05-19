@@ -695,6 +695,67 @@
         }
         .arr-delete:hover { border-color: var(--red); color: var(--red); }
 
+        /* ── ARR time editable ── */
+        .arr-time-edit {
+            color: var(--blue);
+            text-decoration: underline dotted;
+            cursor: pointer;
+            transition: color 0.15s;
+            border-radius: 3px;
+            padding: 0 1px;
+        }
+        .arr-time-edit:hover { color: var(--red); text-decoration: underline solid; }
+
+        /* ── Edit arrival modal ── */
+        #editArrModal {
+            display: none;
+            position: fixed; inset: 0; z-index: 9999;
+            background: rgba(0,0,0,0.45);
+            align-items: center; justify-content: center;
+        }
+        #editArrModal.open { display: flex; }
+        .edit-arr-card {
+            background: var(--s1);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px 22px 20px;
+            width: min(340px, 92vw);
+            box-shadow: 0 8px 40px rgba(0,0,0,0.22);
+            animation: slideDown 0.18s ease;
+        }
+        .edit-arr-card h3 {
+            font-size: 13px; letter-spacing: 0.12em;
+            text-transform: uppercase; color: var(--blue);
+            margin-bottom: 6px;
+        }
+        .edit-arr-card p {
+            font-size: 12px; color: var(--muted);
+            margin-bottom: 16px; line-height: 1.5;
+        }
+        #editArrTimeInput {
+            width: 100%; padding: 12px 10px;
+            background: var(--s2); border: 1px solid var(--border);
+            border-radius: 8px; color: var(--text);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 22px; text-align: center;
+            outline: none; transition: border-color 0.2s;
+            margin-bottom: 16px;
+        }
+        #editArrTimeInput:focus { border-color: var(--blue); }
+        .edit-arr-btns { display: flex; gap: 8px; }
+        .edit-arr-btns button {
+            flex: 1; padding: 11px;
+            border-radius: 9px; border: 1px solid var(--border);
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 15px; font-weight: 700;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            cursor: pointer; transition: all 0.15s;
+        }
+        #editArrConfirm { background: var(--blue); color: #fff; border-color: var(--blue); }
+        #editArrConfirm:hover { opacity: 0.88; }
+        #editArrCancel { background: transparent; color: var(--muted); }
+        #editArrCancel:hover { border-color: var(--red); color: var(--red); }
+
         /* Filter bar */
         .filter-bar {
             width: 100%;
@@ -1491,8 +1552,18 @@
 
         const times = document.createElement('div');
         times.className = 'arr-times';
+        const arrTimeStr = new Date(d.arrivalEpoch).toLocaleTimeString('it-IT');
+        const isTemp = docId.startsWith('temp-');
         times.innerHTML = 'GS: ' + new Date(d.gunStartEpoch).toLocaleTimeString('it-IT') +
-            '&nbsp;→&nbsp;ARR: ' + new Date(d.arrivalEpoch).toLocaleTimeString('it-IT');
+            '&nbsp;→&nbsp;ARR: ' +
+            (isTemp
+                ? arrTimeStr
+                : '<span class="arr-time-edit" title="Clicca per modificare l\'orario di arrivo">' + arrTimeStr + '</span>');
+        if (!isTemp) {
+            times.querySelector('.arr-time-edit').addEventListener('click', () => {
+                openEditArrModal(docId, d.arrivalEpoch, d.number);
+            });
+        }
 
         left.appendChild(numRow);
         left.appendChild(times);
@@ -1703,6 +1774,80 @@
             handleAuth();
         }
     });
+
+    // ─── Edit Arrival Time Modal ──────────────────────────────────────────────
+    let _editArrDocId   = null;
+    let _editArrEpoch   = null;  // current epoch stored for reference
+
+    function openEditArrModal(docId, currentEpoch, numero) {
+        if (docId.startsWith('temp-')) return;
+        _editArrDocId = docId;
+        _editArrEpoch = currentEpoch;
+        document.getElementById('editArrModalNum').textContent = numero;
+
+        // Pre-fill the time input with the current arrival time (HH:MM:SS)
+        const d = new Date(currentEpoch);
+        const hh = String(d.getHours()).padStart(2,'0');
+        const mm = String(d.getMinutes()).padStart(2,'0');
+        const ss = String(d.getSeconds()).padStart(2,'0');
+        document.getElementById('editArrTimeInput').value = hh + ':' + mm + ':' + ss;
+
+        document.getElementById('editArrModal').classList.add('open');
+        setTimeout(() => document.getElementById('editArrTimeInput').focus(), 80);
+    }
+
+    function closeEditArrModal() {
+        document.getElementById('editArrModal').classList.remove('open');
+        _editArrDocId = null;
+        _editArrEpoch = null;
+    }
+
+    async function confirmEditArr() {
+        const val = document.getElementById('editArrTimeInput').value; // HH:MM or HH:MM:SS
+        if (!val) { alert('Inserisci un orario valido.'); return; }
+
+        // Build the new epoch: same date as original, new time
+        const orig  = new Date(_editArrEpoch);
+        const parts = val.split(':');
+        const newD  = new Date(orig);
+        newD.setHours(parseInt(parts[0],10), parseInt(parts[1],10), parts[2] ? parseInt(parts[2],10) : 0, 0);
+        const newEpoch = newD.getTime();
+
+        const docId = _editArrDocId;
+        closeEditArrModal();
+
+        try {
+            const { doc } = window._fns;
+            const { updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+            await updateDoc(doc(window._db, 'arrivals', docId), { arrivalEpoch: newEpoch });
+        } catch(e) {
+            alert('Errore modifica orario arrivo: ' + e.message);
+        }
+    }
+
+    // Close modal on backdrop click
+    document.getElementById('editArrModal').addEventListener('click', function(e) {
+        if (e.target === this) closeEditArrModal();
+    });
+
+    // Confirm on Enter inside the time input
+    document.getElementById('editArrTimeInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter') confirmEditArr();
+        if (e.key === 'Escape') closeEditArrModal();
+    });
 </script>
+
+<!-- ── EDIT ARRIVAL TIME MODAL ── -->
+<div id="editArrModal">
+    <div class="edit-arr-card">
+        <h3>✏️ Modifica orario arrivo</h3>
+        <p>Pettorale: <strong id="editArrModalNum">—</strong></p>
+        <input type="time" id="editArrTimeInput" step="1">
+        <div class="edit-arr-btns">
+            <button id="editArrCancel" onclick="closeEditArrModal()">Annulla</button>
+            <button id="editArrConfirm" onclick="confirmEditArr()">Conferma</button>
+        </div>
+    </div>
+</div>
 </body>
 </html>
